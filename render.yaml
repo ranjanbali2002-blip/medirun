@@ -21,3 +21,5 @@ services:
         value: production
       - key: FRONTEND_URL
         value: https://medirun-mauve.vercel.app
+      - key: PORT
+        value: 4000
