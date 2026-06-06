@@ -44,6 +44,104 @@ function useGeoDistance(address) {
   return s;
 }
 
+// ─── Cloudinary prescription upload ──────────────────────────────────────────
+const CLOUDINARY_CLOUD  = import.meta.env.VITE_CLOUDINARY_CLOUD  || "";
+const CLOUDINARY_PRESET = import.meta.env.VITE_CLOUDINARY_PRESET || "";
+
+async function uploadPrescription(file) {
+  if (!CLOUDINARY_CLOUD || !CLOUDINARY_PRESET) {
+    // Fallback: base64 (works but large)
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.readAsDataURL(file);
+    });
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", CLOUDINARY_PRESET);
+  form.append("folder", "medirun/prescriptions");
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method:"POST", body:form });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Upload failed");
+  return data.secure_url;
+}
+
+// ─── Browser push notifications (free, no API key) ────────────────────────────
+async function requestNotificationPermission() {
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  const perm = await Notification.requestPermission();
+  return perm === "granted";
+}
+
+function sendBrowserNotification(title, body, onClick) {
+  if (Notification.permission !== "granted") return;
+  const n = new Notification(title, {
+    body,
+    icon: "https://emojicdn.elk.sh/💊",
+    badge: "https://emojicdn.elk.sh/💊",
+  });
+  if (onClick) n.onclick = onClick;
+}
+
+// ─── Live Map (Leaflet + OpenStreetMap, completely free) ──────────────────────
+function LiveMap({ shopLat, shopLon, riderLat, riderLon, destLat, destLon }) {
+  const containerRef = useRef(null);
+  const mapRef       = useRef(null);
+  const riderMarker  = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current || !window.L) return;
+    if (mapRef.current) return; // already initialised
+
+    const L = window.L;
+    // Fix default marker icons broken by bundlers
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+      iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+      shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    });
+
+    const map = L.map(containerRef.current, { zoomControl:false, attributionControl:false })
+      .setView([shopLat, shopLon], 14);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Shop marker
+    const shopIcon = L.divIcon({ html:"<div style='font-size:22px;'>💊</div>", className:"", iconAnchor:[11,22] });
+    L.marker([shopLat, shopLon], { icon:shopIcon }).addTo(map).bindPopup("MediRun Shop");
+
+    // Destination marker
+    if (destLat && destLon) {
+      const destIcon = L.divIcon({ html:"<div style='font-size:22px;'>🏠</div>", className:"", iconAnchor:[11,22] });
+      L.marker([destLat, destLon], { icon:destIcon }).addTo(map).bindPopup("Your Location");
+    }
+
+    mapRef.current = map;
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  // Update rider marker whenever position changes
+  useEffect(() => {
+    if (!mapRef.current || !window.L || !riderLat || !riderLon) return;
+    const L = window.L;
+    const riderIcon = L.divIcon({ html:"<div style='font-size:22px;'>🛵</div>", className:"", iconAnchor:[11,22] });
+    if (riderMarker.current) {
+      riderMarker.current.setLatLng([riderLat, riderLon]);
+    } else {
+      riderMarker.current = L.marker([riderLat, riderLon], { icon:riderIcon })
+        .addTo(mapRef.current).bindPopup("Rider");
+    }
+    mapRef.current.panTo([riderLat, riderLon], { animate:true, duration:1 });
+  }, [riderLat, riderLon]);
+
+  return <div ref={containerRef} style={{ width:"100%", height:200 }} />;
+}
+
 async function apiCall(path, opts = {}, token = null) {
   const headers = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   try {
@@ -470,12 +568,19 @@ function CustomerHome({ cart, setCart, token, setShowPayment, setCurrentOrder })
   const subtotal = cart.reduce((a,c)=>a+c.price,0);
   const total    = subtotal + (geo.fee||0);
 
-  const handlePrescription = e => {
+  const [prescriptionUploading, setPrescriptionUploading] = useState(false);
+  const handlePrescription = async e => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPrescription(reader.result);
-    reader.readAsDataURL(file);
+    if (file.size > 10 * 1024 * 1024) { alert("File too large. Max 10MB."); return; }
+    setPrescriptionUploading(true);
+    try {
+      const url = await uploadPrescription(file);
+      setPrescription(url);
+    } catch {
+      alert("Upload failed. Try again.");
+    }
+    setPrescriptionUploading(false);
   };
 
   const placeOrder = async () => {
@@ -491,11 +596,13 @@ function CustomerHome({ cart, setCart, token, setShowPayment, setCurrentOrder })
     };
     const data = await apiCall("/api/orders", { method:"POST", body:JSON.stringify(orderData) }, token);
     const orderId = data?.id || ("ORX-" + Math.floor(1000+Math.random()*9000));
-    setCurrentOrder({ id:orderId, total });
+    setCurrentOrder({ id:orderId, total, delivery_distance: geo.km });
     setCart([]);
     setShowCheckout(false);
     setPlacing(false);
     setShowPayment(true);
+    // Ask for notification permission so we can alert on delivery updates
+    requestNotificationPermission();
   };
 
   return (
@@ -586,9 +693,12 @@ function CustomerHome({ cart, setCart, token, setShowPayment, setCurrentOrder })
               <div style={{ fontSize:12, color:theme.gold, fontWeight:600, marginBottom:6 }}>⚕️ Prescription Required</div>
               <div style={{ fontSize:11, color:theme.textMuted, marginBottom:8 }}>One or more medicines in your cart require a valid prescription.</div>
               <label style={{ display:"block", padding:"8px 14px", background:theme.bgCardAlt, border:`1px dashed ${theme.gold}66`, borderRadius:8, textAlign:"center", cursor:"pointer", fontSize:12, color:prescription?theme.accent:theme.textMuted }}>
-                {prescription ? "✓ Prescription uploaded" : "📎 Upload Prescription (Photo/PDF)"}
-                <input type="file" accept="image/*,application/pdf" onChange={handlePrescription} style={{ display:"none" }} />
+                {prescriptionUploading ? <><Spinner/> Uploading…</> : prescription ? "✓ Prescription uploaded to cloud" : "📎 Upload Prescription (Photo/PDF)"}
+                <input type="file" accept="image/*,application/pdf" onChange={handlePrescription} style={{ display:"none" }} disabled={prescriptionUploading} />
               </label>
+              {prescription && prescription.startsWith("http") && (
+                <a href={prescription} target="_blank" rel="noreferrer" style={{ display:"block", textAlign:"center", fontSize:11, color:theme.accent, marginTop:4 }}>View uploaded file ↗</a>
+              )}
             </div>
           )}
 
@@ -679,12 +789,29 @@ function CustomerOrders({ token, user }) {
 }
 
 function CustomerTrack({ token, currentOrder }) {
-  const [order, setOrder] = useState(null);
+  const [order, setOrder]     = useState(null);
   const [riderPos, setRiderPos] = useState(null);
+  const prevStatus = useRef(null);
+
+  useEffect(() => { requestNotificationPermission(); }, []);
 
   useEffect(() => {
     if (!currentOrder?.id) return;
-    const fetch_ = () => apiCall(`/api/orders/${currentOrder.id}`,{},token).then(d=>{ if(d?.id){ setOrder(d); if(d.rider_lat) setRiderPos({lat:d.rider_lat,lon:d.rider_lon}); }});
+    const fetch_ = () => apiCall(`/api/orders/${currentOrder.id}`,{},token).then(d=>{
+      if (!d?.id) return;
+      setOrder(d);
+      if (d.rider_lat) setRiderPos({ lat:+d.rider_lat, lon:+d.rider_lon });
+      // Fire browser notification when status changes
+      if (prevStatus.current && prevStatus.current !== d.status) {
+        const msgs = {
+          confirmed: "✅ Order confirmed! Pharmacist is packing your medicines.",
+          transit:   "🛵 Your rider is on the way! Check your delivery OTP.",
+          delivered: "📦 Delivered! Enjoy your medicines.",
+        };
+        if (msgs[d.status]) sendBrowserNotification("MediRun", msgs[d.status]);
+      }
+      prevStatus.current = d.status;
+    });
     fetch_();
     const iv = setInterval(fetch_, 5000);
     return () => clearInterval(iv);
@@ -706,25 +833,30 @@ function CustomerTrack({ token, currentOrder }) {
       ) : (
         <>
           <p style={{ fontSize:13, color:theme.textMuted, marginBottom:16 }}>{currentOrder.id}</p>
-          {/* Map */}
+          {/* Live Map */}
           <div style={{ background:theme.bgCard, border:`1px solid ${theme.border}`, borderRadius:16, overflow:"hidden", marginBottom:16 }}>
-            <div style={{ background:theme.bgCardAlt, padding:16 }}>
-              <svg width="100%" height="160" viewBox="0 0 400 160">
-                <defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor={theme.accent}/><stop offset="100%" stopColor={theme.purple}/></linearGradient></defs>
-                {[30,60,90,120,150].map(y=><line key={y} x1="0" y1={y} x2="400" y2={y} stroke={theme.border} strokeWidth="1"/>)}
-                {[80,160,240,320].map(x=><line key={x} x1={x} y1="0" x2={x} y2="160" stroke={theme.border} strokeWidth="1"/>)}
-                <polyline points="30,120 80,100 140,80 200,70 260,55 320,45 370,50" fill="none" stroke={theme.border} strokeWidth="3" strokeLinecap="round"/>
-                <polyline points="30,120 80,100 140,80 200,70 260,55" fill="none" stroke="url(#tg)" strokeWidth="3" strokeLinecap="round"/>
-                <circle cx="30" cy="120" r="8" fill={theme.accent}/><text x="40" y="116" fill={theme.accent} fontSize="11">Shop</text>
-                <text x="248" y="45" fontSize="18">🛵</text>
-                <circle cx="370" cy="50" r="8" fill={theme.purple}/><text x="350" y="40" fill={theme.purple} fontSize="11">You</text>
-                <circle cx="260" cy="55" r="14" fill="none" stroke={theme.gold} strokeWidth="1.5" opacity="0.5"/>
-              </svg>
-            </div>
+            <LiveMap
+              shopLat={SHOP.lat} shopLon={SHOP.lon}
+              riderLat={riderPos?.lat} riderLon={riderPos?.lon}
+              destLat={order?.delivery_lat ? +order.delivery_lat : null}
+              destLon={order?.delivery_lon ? +order.delivery_lon : null}
+            />
             <div style={{ padding:"12px 16px", display:"flex", justifyContent:"space-between" }}>
-              <div><div style={{ fontSize:12, color:theme.textMuted }}>Rider</div><div style={{ fontWeight:600 }}>{order?.rider_name || "Assigning…"}</div></div>
-              <div style={{ textAlign:"right" }}><div style={{ fontSize:12, color:theme.textMuted }}>Status</div><StatusPill status={order?.status||"pending"}/></div>
+              <div>
+                <div style={{ fontSize:12, color:theme.textMuted }}>Rider</div>
+                <div style={{ fontWeight:600 }}>{order?.rider_name || "Assigning…"}</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:12, color:theme.textMuted }}>Status</div>
+                <StatusPill status={order?.status||"pending"}/>
+              </div>
             </div>
+            {riderPos && (
+              <div style={{ padding:"8px 16px", background:theme.bgCardAlt, display:"flex", alignItems:"center", gap:8, borderTop:`1px solid ${theme.border}` }}>
+                <span style={{ width:8, height:8, borderRadius:"50%", background:theme.accent, animation:"pulse 1.5s infinite", flexShrink:0 }} />
+                <span style={{ fontSize:12, color:theme.accent }}>Live GPS — rider location updating every 5s</span>
+              </div>
+            )}
           </div>
 
           {/* ETA */}
@@ -1009,6 +1141,25 @@ function RiderApp({ user, token, onNavigate, onLogout }) {
 function AdminDashboard({ user, token, onNavigate, onLogout }) {
   const [tab, setTab] = useState("overview");
   const tabs = ["overview","orders","inventory","riders","delivery","analytics"];
+  const [pendingCount, setPendingCount] = useState(0);
+  const prevPending = useRef(0);
+
+  useEffect(() => {
+    requestNotificationPermission();
+    const poll = async () => {
+      const data = await apiCall("/api/orders", {}, token);
+      if (!data) return;
+      const count = data.filter(o => o.status === "pending").length;
+      setPendingCount(count);
+      if (count > prevPending.current) {
+        sendBrowserNotification("MediRun Admin", `🆕 ${count - prevPending.current} new order(s) waiting for review`);
+      }
+      prevPending.current = count;
+    };
+    poll();
+    const iv = setInterval(poll, 15000);
+    return () => clearInterval(iv);
+  }, []);
 
   return (
     <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column" }}>
@@ -1029,6 +1180,15 @@ function AdminDashboard({ user, token, onNavigate, onLogout }) {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           <span style={{ fontSize:13, color:theme.textMuted }}>👤 {user?.name}</span>
+          {/* Notification bell */}
+          <div style={{ position:"relative", cursor:"pointer" }} onClick={()=>setTab("orders")}>
+            <span style={{ fontSize:20 }}>🔔</span>
+            {pendingCount > 0 && (
+              <div style={{ position:"absolute", top:-4, right:-4, width:18, height:18, borderRadius:"50%", background:theme.danger, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"#fff" }}>
+                {pendingCount}
+              </div>
+            )}
+          </div>
           <button className="btn btn-danger" onClick={onLogout} style={{ padding:"6px 12px", fontSize:12 }}>Sign Out</button>
         </div>
       </header>
