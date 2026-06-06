@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const UPI_ID   = "medirun@ybl";   // ← change to your UPI ID
+const UPI_ID   = "ranjanbali2002-1@okhdfcbank";   // ← change to your UPI ID
 const UPI_NAME = "MediRun Pharmacy";
 const SHOP     = { lat: 31.3618, lon: 76.4941 };
 const API      = import.meta.env.VITE_API_URL || "";
@@ -722,6 +722,15 @@ function CustomerTrack({ token, currentOrder }) {
             <div style={{ fontFamily:"Syne", fontWeight:800, fontSize:40, color:theme.accent }}>~{Math.round((currentOrder.delivery_distance||3)*4+5)} min</div>
           </div>
 
+          {/* Delivery OTP — show only when rider is on the way */}
+          {order?.delivery_otp && order?.status !== "delivered" && (
+            <div style={{ background:`linear-gradient(135deg,${theme.gold}18,${theme.gold}08)`, border:`2px solid ${theme.gold}66`, borderRadius:16, padding:20, marginBottom:16, textAlign:"center" }}>
+              <div style={{ fontSize:12, color:theme.gold, fontWeight:600, letterSpacing:1, marginBottom:8 }}>🔐 DELIVERY OTP — Show this to your rider</div>
+              <div style={{ fontFamily:"Syne", fontWeight:800, fontSize:52, color:theme.gold, letterSpacing:12 }}>{order.delivery_otp}</div>
+              <div style={{ fontSize:12, color:theme.textMuted, marginTop:8 }}>Rider will enter this code to confirm delivery</div>
+            </div>
+          )}
+
           {/* Steps */}
           <div className="card">
             <div style={{ fontFamily:"Syne", fontWeight:700, marginBottom:16 }}>Order Journey</div>
@@ -829,9 +838,27 @@ function RiderApp({ user, token, onNavigate, onLogout }) {
     await apiCall("/api/riders/availability", { method:"PATCH", body:JSON.stringify({ available:next }) }, token);
   };
 
+  const [otpInput, setOtpInput] = useState({});
+  const [otpError, setOtpError] = useState({});
+  const [otpLoading, setOtpLoading] = useState({});
+
   const updateStatus = async (orderId, status) => {
     await apiCall(`/api/orders/${orderId}/status`, { method:"PATCH", body:JSON.stringify({ status }) }, token);
     setOrders(prev => prev.map(o => o.id===orderId ? {...o,status} : o).filter(o=>o.status!=="delivered"));
+  };
+
+  const confirmDelivery = async (orderId) => {
+    const otp = otpInput[orderId];
+    if (!otp || otp.length !== 4) { setOtpError(e=>({...e,[orderId]:"Enter 4-digit OTP"})); return; }
+    setOtpLoading(l=>({...l,[orderId]:true}));
+    setOtpError(e=>({...e,[orderId]:""}));
+    const data = await apiCall(`/api/orders/${orderId}/verify-delivery`, { method:"POST", body:JSON.stringify({ otp }) }, token);
+    if (data?.status === "delivered") {
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+    } else {
+      setOtpError(e=>({...e,[orderId]: data?.error || "Wrong OTP — ask customer again"}));
+    }
+    setOtpLoading(l=>({...l,[orderId]:false}));
   };
 
   return (
@@ -907,9 +934,23 @@ function RiderApp({ user, token, onNavigate, onLogout }) {
                     </button>
                   )}
                   {o.status === "transit" && (
-                    <button className="btn btn-primary" style={{ flex:1, padding:8, fontSize:12 }} onClick={()=>updateStatus(o.id,"delivered")}>
-                      ✓ Mark Delivered
-                    </button>
+                    <div style={{ width:"100%" }}>
+                      <div style={{ fontSize:11, color:theme.gold, fontWeight:600, marginBottom:6 }}>🔐 Ask customer for their OTP</div>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <input
+                          className="input"
+                          placeholder="Enter 4-digit OTP"
+                          maxLength={4}
+                          value={otpInput[o.id]||""}
+                          onChange={e=>setOtpInput(v=>({...v,[o.id]:e.target.value.replace(/\D/g,"").slice(0,4)}))}
+                          style={{ flex:1, fontSize:20, fontFamily:"Syne", fontWeight:700, textAlign:"center", letterSpacing:8, padding:"8px" }}
+                        />
+                        <button className="btn btn-primary" style={{ padding:"8px 16px", fontSize:13 }} onClick={()=>confirmDelivery(o.id)} disabled={otpLoading[o.id]}>
+                          {otpLoading[o.id] ? <Spinner/> : "✓"}
+                        </button>
+                      </div>
+                      {otpError[o.id] && <div style={{ fontSize:12, color:theme.danger, marginTop:6 }}>{otpError[o.id]}</div>}
+                    </div>
                   )}
                 </div>
               </div>

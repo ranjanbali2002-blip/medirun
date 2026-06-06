@@ -64,6 +64,7 @@ async function seed() {
         prescription_data TEXT,
         prescription_status VARCHAR(20) DEFAULT 'not_required',
         requires_prescription BOOLEAN DEFAULT FALSE,
+        delivery_otp VARCHAR(4),
         created_at TIMESTAMP DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS order_items (
