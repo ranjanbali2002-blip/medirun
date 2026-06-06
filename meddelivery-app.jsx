@@ -1,5 +1,54 @@
 import { useState, useEffect, useRef } from "react";
 
+// ─── Shop location (Sri Anandpur Sahib) ──────────────────────────────────────
+const SHOP = { lat: 31.3618, lon: 76.4941 };
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return +(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1);
+}
+
+function deliveryFee(km) {
+  if (km <= 0) return 0;
+  if (km <= 2) return 20;
+  if (km <= 4) return 30;
+  if (km <= 6) return 45;
+  return 60;
+}
+
+function useGeoDistance(address) {
+  const [state, setState] = useState({ loading: false, km: null, fee: null, error: null });
+  useEffect(() => {
+    if (!address || address.trim().length < 4) {
+      setState({ loading: false, km: null, fee: null, error: null });
+      return;
+    }
+    setState(s => ({ ...s, loading: true, error: null }));
+    const t = setTimeout(async () => {
+      try {
+        const q = encodeURIComponent(address + ", Punjab, India");
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
+          { headers: { "Accept-Language": "en" } }
+        );
+        const data = await res.json();
+        if (!data[0]) throw new Error("Address not found — try adding a landmark or area name");
+        const km = haversine(SHOP.lat, SHOP.lon, +data[0].lat, +data[0].lon);
+        setState({ loading: false, km, fee: deliveryFee(km), error: null });
+      } catch (e) {
+        setState({ loading: false, km: null, fee: null, error: e.message });
+      }
+    }, 700);
+    return () => clearTimeout(t);
+  }, [address]);
+  return state;
+}
+
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const theme = {
   bg: "#0A0F1E",
@@ -431,7 +480,11 @@ function AdminOrders() {
             </div>
             <div>
               <div style={{ fontFamily: "Syne", fontWeight: 700, fontSize: 20, marginBottom: 4 }}>₹{o.total}</div>
-              <div style={{ fontSize: 12, color: theme.textMuted }}>📏 {o.distance} km · {o.time}</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>📏 {o.distance} km · {o.time}</div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: `${theme.gold}18`, border: `1px solid ${theme.gold}44`, borderRadius: 8, padding: "3px 10px" }}>
+                <span style={{ fontSize: 11, color: theme.gold }}>🛵 Delivery</span>
+                <span style={{ fontFamily: "Syne", fontWeight: 700, fontSize: 13, color: theme.gold }}>₹{deliveryFee(o.distance)}</span>
+              </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
               <span className={`status-pill status-${o.status}`}>
@@ -701,6 +754,10 @@ function CustomerDashboard({ onNavigate }) {
 }
 
 function CustomerHome({ cart, setCart }) {
+  const [address, setAddress] = useState("");
+  const [showCheckout, setShowCheckout] = useState(false);
+  const geo = useGeoDistance(address);
+
   const meds = [
     { name: "Paracetamol 500mg", brand: "Crocin", price: 28, category: "Pain Relief", icon: "💊" },
     { name: "Vitamin C 500mg", brand: "Limcee", price: 45, category: "Vitamins", icon: "🍊" },
@@ -776,10 +833,94 @@ function CustomerHome({ cart, setCart }) {
         })}
       </div>
 
-      {cart.length > 0 && (
-        <div style={{ position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)", width: "calc(100% - 40px)", maxWidth: 440, background: theme.accent, borderRadius: 14, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: `0 8px 32px ${theme.accent}44`, zIndex: 40 }}>
+      {cart.length > 0 && !showCheckout && (
+        <div onClick={() => setShowCheckout(true)} style={{ position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)", width: "calc(100% - 40px)", maxWidth: 440, background: theme.accent, borderRadius: 14, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: `0 8px 32px ${theme.accent}44`, zIndex: 40, cursor: "pointer" }}>
           <span style={{ color: "#0A0F1E", fontWeight: 600 }}>{cart.length} item{cart.length > 1 ? "s" : ""} · ₹{cart.reduce((a, c) => a + c.price, 0)}</span>
           <span style={{ color: "#0A0F1E", fontWeight: 700 }}>Checkout →</span>
+        </div>
+      )}
+
+      {cart.length > 0 && showCheckout && (
+        <div style={{ position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)", width: "calc(100% - 40px)", maxWidth: 440, background: theme.bgCard, border: `1px solid ${theme.accentSoft}`, borderRadius: 18, padding: 16, boxShadow: `0 8px 40px #00000066`, zIndex: 40 }}>
+          {/* Header */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontFamily: "Syne", fontWeight: 700, fontSize: 15 }}>Checkout</span>
+            <button onClick={() => setShowCheckout(false)} style={{ background: "none", border: "none", color: theme.textMuted, cursor: "pointer", fontSize: 18 }}>✕</button>
+          </div>
+
+          {/* Address input */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 6 }}>DELIVERY ADDRESS</div>
+            <input
+              className="input"
+              placeholder="e.g. Kiratpur Sahib, near bus stand"
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              style={{ fontSize: 13 }}
+            />
+          </div>
+
+          {/* Distance & fee result */}
+          {geo.loading && (
+            <div style={{ fontSize: 12, color: theme.textMuted, padding: "8px 0", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span> Calculating distance…
+            </div>
+          )}
+          {geo.error && (
+            <div style={{ fontSize: 12, color: theme.danger, padding: "6px 10px", background: `${theme.danger}15`, borderRadius: 8, marginBottom: 8 }}>
+              {geo.error}
+            </div>
+          )}
+          {geo.km !== null && (
+            <div style={{ background: theme.bgCardAlt, borderRadius: 10, padding: "10px 12px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: theme.textMuted }}>DISTANCE</div>
+                  <div style={{ fontFamily: "Syne", fontWeight: 700, color: theme.gold }}>{geo.km} km</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: theme.textMuted }}>DELIVERY FEE</div>
+                  <div style={{ fontFamily: "Syne", fontWeight: 700, color: theme.accent }}>₹{geo.fee}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: theme.textMuted }}>EST. TIME</div>
+                  <div style={{ fontFamily: "Syne", fontWeight: 700 }}>{Math.round(geo.km * 4 + 5)} min</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: theme.textMuted, textAlign: "right" }}>
+                📍 From shop<br/>Sri Anandpur Sahib
+              </div>
+            </div>
+          )}
+
+          {/* Distance pricing legend */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+            {[["0–2 km","₹20"],["2–4 km","₹30"],["4–6 km","₹45"],["6+ km","₹60"]].map(([r,f]) => (
+              <div key={r} style={{ fontSize: 10, padding: "3px 8px", background: theme.bgCardAlt, borderRadius: 6, color: theme.textMuted }}>
+                {r} → <span style={{ color: theme.accent }}>{f}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Order total */}
+          <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: 10, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+              <span style={{ color: theme.textMuted }}>Medicines ({cart.length} items)</span>
+              <span>₹{cart.reduce((a, c) => a + c.price, 0)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+              <span style={{ color: theme.textMuted }}>Delivery fee</span>
+              <span style={{ color: geo.km ? theme.accent : theme.textMuted }}>{geo.km ? `₹${geo.fee}` : "Enter address"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "Syne", fontWeight: 700, fontSize: 15 }}>
+              <span>Total</span>
+              <span style={{ color: theme.accent }}>₹{cart.reduce((a, c) => a + c.price, 0) + (geo.fee || 0)}</span>
+            </div>
+          </div>
+
+          <button className="btn btn-primary" style={{ width: "100%", padding: 12 }} disabled={!geo.km}>
+            {geo.km ? `Place Order · ₹${cart.reduce((a, c) => a + c.price, 0) + geo.fee}` : "Enter address to continue"}
+          </button>
         </div>
       )}
     </div>
