@@ -1,0 +1,23 @@
+databases:
+  - name: medirun-db
+    databaseName: medirun
+    user: medirun
+    plan: free
+
+services:
+  - type: web
+    name: medirun-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: medirun-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://medirun-mauve.vercel.app
