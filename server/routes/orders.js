@@ -39,6 +39,10 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
   const client = await pool.connect();
   try {
     const { medicines, total, delivery_fee, delivery_address, delivery_lat, delivery_lon, delivery_distance, prescription_data, requires_prescription } = req.body;
+    const MAX_KM = 5;
+    if (delivery_distance && delivery_distance > MAX_KM) {
+      return res.status(400).json({ error: `Delivery only available within ${MAX_KM} km of the shop. Your address is ${delivery_distance} km away.` });
+    }
     await client.query("BEGIN");
     const orderId = "ORX-" + Math.floor(1000 + Math.random() * 9000);
     const deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const UPI_ID   = "ranjanbali2002-1@okhdfcbank";   // ← change to your UPI ID
-const UPI_NAME = "MediRun Pharmacy";
-const SHOP     = { lat: 31.3618, lon: 76.4941 };
-const API      = import.meta.env.VITE_API_URL || "";
+const UPI_ID        = "ranjanbali2002-1@okhdfcbank"; // ← change to your UPI ID
+const UPI_NAME      = "MediRun Pharmacy";
+const SHOP          = { lat: 31.3618, lon: 76.4941 };
+const MAX_DELIVERY_KM = 5; // delivery restricted to 5 km from shop
+const API           = import.meta.env.VITE_API_URL || "";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function haversine(lat1, lon1, lat2, lon2) {
@@ -563,7 +564,12 @@ function CustomerHome({ cart, setCart, token, setShowPayment, setCurrentOrder })
 
           {geo.loading && <div style={{ fontSize:12, color:theme.textMuted, marginBottom:8, display:"flex", gap:6, alignItems:"center" }}><Spinner/> Calculating distance…</div>}
           {geo.error   && <div style={{ fontSize:12, color:theme.danger, padding:"6px 10px", background:`${theme.danger}15`, borderRadius:8, marginBottom:8 }}>{geo.error}</div>}
-          {geo.km && (
+          {geo.km > MAX_DELIVERY_KM && (
+            <div style={{ fontSize:13, color:theme.danger, padding:"10px 14px", background:`${theme.danger}15`, border:`1px solid ${theme.danger}44`, borderRadius:10, marginBottom:8 }}>
+              📍 Sorry, your address is <strong>{geo.km} km</strong> away. We currently deliver within <strong>{MAX_DELIVERY_KM} km</strong> of our shop in Sri Anandpur Sahib only.
+            </div>
+          )}
+          {geo.km && geo.km <= MAX_DELIVERY_KM && (
             <div style={{ background:theme.bgCardAlt, borderRadius:10, padding:"10px 12px", marginBottom:10, display:"flex", justifyContent:"space-between" }}>
               <div style={{ display:"flex", gap:16 }}>
                 <div><div style={{ fontSize:10, color:theme.textMuted }}>DISTANCE</div><div style={{ fontFamily:"Syne", fontWeight:700, color:theme.gold }}>{geo.km} km</div></div>
@@ -588,7 +594,8 @@ function CustomerHome({ cart, setCart, token, setShowPayment, setCurrentOrder })
 
           {/* Fee tiers */}
           <div style={{ display:"flex", gap:6, marginBottom:12, flexWrap:"wrap" }}>
-            {[["0–2km","₹20"],["2–4km","₹30"],["4–6km","₹45"],["6+km","₹60"]].map(([r,f])=>(
+            <div style={{ fontSize:10, padding:"3px 8px", background:`${theme.accent}18`, border:`1px solid ${theme.accentSoft}`, borderRadius:6, color:theme.accent }}>📍 Max delivery: {MAX_DELIVERY_KM} km</div>
+            {[["0–2km","₹20"],["2–4km","₹30"],["4–5km","₹45"]].map(([r,f])=>(
               <div key={r} style={{ fontSize:10, padding:"3px 8px", background:theme.bgCardAlt, borderRadius:6, color:theme.textMuted }}>{r} → <span style={{ color:theme.accent }}>{f}</span></div>
             ))}
           </div>
@@ -611,8 +618,12 @@ function CustomerHome({ cart, setCart, token, setShowPayment, setCurrentOrder })
 
           <button className="btn btn-primary" style={{ width:"100%", padding:12 }}
             onClick={placeOrder}
-            disabled={!geo.km || (needsPrescription && !prescription) || placing}>
-            {placing ? <Spinner/> : !geo.km ? "Enter address to continue" : needsPrescription && !prescription ? "Upload prescription to continue" : `Pay ₹${total} via UPI →`}
+            disabled={!geo.km || geo.km > MAX_DELIVERY_KM || (needsPrescription && !prescription) || placing}>
+            {placing ? <Spinner/>
+              : !geo.km                              ? "Enter address to continue"
+              : geo.km > MAX_DELIVERY_KM             ? `Outside delivery zone (${geo.km} km > ${MAX_DELIVERY_KM} km)`
+              : needsPrescription && !prescription   ? "Upload prescription to continue"
+              : `Pay ₹${total} via UPI →`}
           </button>
         </div>
       )}
