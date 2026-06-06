@@ -5,43 +5,73 @@ async function seed() {
   try {
     await client.query("BEGIN");
 
+    // Schema
     await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        phone VARCHAR(15) UNIQUE NOT NULL,
+        name VARCHAR(100),
+        role VARCHAR(20) DEFAULT 'customer',
+        address TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS otps (
+        id SERIAL PRIMARY KEY,
+        phone VARCHAR(15) NOT NULL,
+        code VARCHAR(6) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
       CREATE TABLE IF NOT EXISTS medicines (
         id SERIAL PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         brand VARCHAR(100),
         price DECIMAL(10,2) NOT NULL,
         category VARCHAR(50),
-        icon VARCHAR(10),
-        created_at TIMESTAMP DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS customers (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        address TEXT,
-        phone VARCHAR(20),
+        icon VARCHAR(10) DEFAULT '💊',
+        stock INT DEFAULT 100,
+        requires_prescription BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS riders (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
+        user_id INT REFERENCES users(id),
         vehicle VARCHAR(100),
+        available BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS rider_locations (
+        rider_id INT REFERENCES riders(id) PRIMARY KEY,
+        lat DECIMAL(10,7),
+        lon DECIMAL(10,7),
+        updated_at TIMESTAMP DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS orders (
         id VARCHAR(20) PRIMARY KEY,
-        customer_id INT REFERENCES customers(id),
-        status VARCHAR(20) DEFAULT 'pending',
+        user_id INT REFERENCES users(id),
+        status VARCHAR(30) DEFAULT 'pending',
         total DECIMAL(10,2),
-        distance DECIMAL(5,1),
+        delivery_fee INT DEFAULT 0,
+        delivery_address TEXT,
+        delivery_lat DECIMAL(10,7),
+        delivery_lon DECIMAL(10,7),
+        delivery_distance DECIMAL(5,1),
         items INT DEFAULT 1,
+        payment_status VARCHAR(30) DEFAULT 'unpaid',
+        upi_ref VARCHAR(100),
+        rider_id INT REFERENCES riders(id),
+        prescription_data TEXT,
+        prescription_status VARCHAR(20) DEFAULT 'not_required',
+        requires_prescription BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS order_items (
         id SERIAL PRIMARY KEY,
         order_id VARCHAR(20) REFERENCES orders(id),
         medicine_name VARCHAR(100),
-        quantity INT DEFAULT 1
+        quantity INT DEFAULT 1,
+        price DECIMAL(10,2) DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS route_groups (
         id SERIAL PRIMARY KEY,
@@ -56,103 +86,77 @@ async function seed() {
         order_id VARCHAR(20) REFERENCES orders(id),
         PRIMARY KEY (route_group_id, order_id)
       );
+      CREATE TABLE IF NOT EXISTS payments (
+        id SERIAL PRIMARY KEY,
+        order_id VARCHAR(20) REFERENCES orders(id),
+        amount DECIMAL(10,2),
+        method VARCHAR(20) DEFAULT 'upi',
+        utr_ref VARCHAR(100),
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
     `);
 
-    // Medicines
-    await client.query(`
-      INSERT INTO medicines (name, brand, price, category, icon) VALUES
-        ('Paracetamol 500mg','Crocin',28,'Pain Relief','💊'),
-        ('Vitamin C 500mg','Limcee',45,'Vitamins','🍊'),
-        ('Cough Syrup','Benadryl',90,'Cold & Flu','🫁'),
-        ('Amoxicillin 250mg','Mox',72,'Antibiotic','🔬'),
-        ('Antacid Tablet','Digene',35,'Digestion','🫃'),
-        ('Ibuprofen 400mg','Brufen',42,'Pain Relief','💊')
-      ON CONFLICT DO NOTHING;
+    // Seed demo users
+    const adminResult = await client.query(`
+      INSERT INTO users (phone, name, role) VALUES
+        ('0000000000','Admin User','admin'),
+        ('8888888888','Arjun Singh','rider'),
+        ('7777777777','Vikram Rao','rider'),
+        ('6666666666','Mohit Dev','rider'),
+        ('9999999999','Priya Sharma','customer')
+      ON CONFLICT (phone) DO NOTHING RETURNING id, phone, role;
     `);
 
-    // Customers
-    const custResult = await client.query(`
-      INSERT INTO customers (name, address) VALUES
-        ('Priya Sharma','Kiratpur Sahib, Sri Anandpur Sahib'),
-        ('Rajesh Kumar','Nangal Rd, Sri Anandpur Sahib'),
-        ('Anita Verma','Gurdwara Chowk, Sri Anandpur Sahib'),
-        ('Sunil Mehta','Keshgarh Sahib Rd, Sri Anandpur Sahib'),
-        ('Deepika Singh','Rupnagar Rd, Sri Anandpur Sahib'),
-        ('Harpreet Kaur','Bhakra Canal Side, Sri Anandpur Sahib')
-      ON CONFLICT DO NOTHING RETURNING id;
-    `);
+    const userMap = {};
+    for (const u of adminResult.rows) userMap[u.phone] = u.id;
 
-    // Riders
-    const riderResult = await client.query(`
-      INSERT INTO riders (name, vehicle) VALUES
-        ('Arjun Singh','Hero Splendor'),
-        ('Vikram Rao','Honda Activa'),
-        ('Mohit Dev','TVS Jupiter')
-      ON CONFLICT DO NOTHING RETURNING id;
-    `);
-
-    // Only seed orders if customers were inserted
-    if (custResult.rows.length > 0) {
-      const cids = custResult.rows.map(r => r.id);
-      const orders = [
-        ['ORX-1042', cids[0], 'delivered', 840, 2.4, 3],
-        ['ORX-1043', cids[1], 'transit',   1250, 4.1, 5],
-        ['ORX-1044', cids[2], 'transit',    420, 3.7, 2],
-        ['ORX-1045', cids[3], 'pending',   2100, 5.2, 7],
-        ['ORX-1046', cids[4], 'pending',    990, 6.8, 4],
-        ['ORX-1047', cids[5], 'delivered',  180, 3.2, 1],
-      ];
-      for (const [id, cid, status, total, distance, items] of orders) {
-        await client.query(
-          "INSERT INTO orders (id, customer_id, status, total, distance, items) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
-          [id, cid, status, total, distance, items]
-        );
-      }
-
-      const itemsData = [
-        ['ORX-1042', ['Paracetamol 500mg','Vitamin C 500mg','Cough Syrup']],
-        ['ORX-1043', ['Metformin 500mg','BP Tablet','Antacid']],
-        ['ORX-1044', ['Amoxicillin 250mg','Ibuprofen 400mg']],
-        ['ORX-1045', ['Insulin','Glucometer Strips','Metformin']],
-        ['ORX-1046', ['Thyroid Med','Calcium D3','Iron Tablets']],
-        ['ORX-1047', ['Azithromycin 500mg']],
-      ];
-      for (const [oid, meds] of itemsData) {
-        for (const med of meds) {
-          await client.query(
-            "INSERT INTO order_items (order_id, medicine_name) VALUES ($1,$2) ON CONFLICT DO NOTHING",
-            [oid, med]
-          );
-        }
-      }
-
-      // Route groups
-      if (riderResult.rows.length > 0) {
-        const rids = riderResult.rows.map(r => r.id);
-        const rg1 = await client.query(
-          "INSERT INTO route_groups (direction, distance, eta, rider_id) VALUES ($1,$2,$3,$4) RETURNING id",
-          ['North (Kiratpur Sahib → Nangal Rd)', '6.5 km', '18 min', rids[0]]
-        );
-        const rg2 = await client.query(
-          "INSERT INTO route_groups (direction, distance, eta, rider_id) VALUES ($1,$2,$3,$4) RETURNING id",
-          ['South (Gurdwara Chowk → Rupnagar Rd)', '10.2 km', '28 min', rids[1]]
-        );
-        const rg3 = await client.query(
-          "INSERT INTO route_groups (direction, distance, eta, rider_id) VALUES ($1,$2,$3,$4) RETURNING id",
-          ['East (Bhakra Canal Side)', '3.2 km', '9 min', rids[2]]
-        );
-        for (const oid of ['ORX-1042','ORX-1043']) {
-          await client.query("INSERT INTO route_group_orders VALUES ($1,$2)", [rg1.rows[0].id, oid]);
-        }
-        for (const oid of ['ORX-1044','ORX-1045','ORX-1046']) {
-          await client.query("INSERT INTO route_group_orders VALUES ($1,$2)", [rg2.rows[0].id, oid]);
-        }
-        await client.query("INSERT INTO route_group_orders VALUES ($1,$2)", [rg3.rows[0].id, 'ORX-1047']);
+    // If we need to fetch existing users
+    for (const phone of ['8888888888','7777777777','6666666666']) {
+      if (!userMap[phone]) {
+        const { rows } = await client.query("SELECT id FROM users WHERE phone=$1", [phone]);
+        if (rows[0]) userMap[phone] = rows[0].id;
       }
     }
 
+    // Seed riders
+    for (const [phone, vehicle] of [
+      ['8888888888','Hero Splendor'],
+      ['7777777777','Honda Activa'],
+      ['6666666666','TVS Jupiter']
+    ]) {
+      const uid = userMap[phone];
+      if (uid) {
+        await client.query(
+          "INSERT INTO riders (user_id, vehicle) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+          [uid, vehicle]
+        );
+      }
+    }
+
+    // Seed medicines
+    await client.query(`
+      INSERT INTO medicines (name, brand, price, category, icon, stock, requires_prescription) VALUES
+        ('Paracetamol 500mg','Crocin',28,'Pain Relief','💊',150,false),
+        ('Vitamin C 500mg','Limcee',45,'Vitamins','🍊',200,false),
+        ('Cough Syrup','Benadryl',90,'Cold & Flu','🫁',80,false),
+        ('Amoxicillin 250mg','Mox',72,'Antibiotic','🔬',60,true),
+        ('Antacid Tablet','Digene',35,'Digestion','🫃',120,false),
+        ('Ibuprofen 400mg','Brufen',42,'Pain Relief','💊',100,false),
+        ('Metformin 500mg','Glycomet',38,'Diabetes','💉',90,true),
+        ('Azithromycin 500mg','Azee',95,'Antibiotic','🔬',50,true),
+        ('Cetirizine 10mg','Cetzine',22,'Allergy','🌿',110,false),
+        ('Omeprazole 20mg','Omez',48,'Digestion','🫃',75,true)
+      ON CONFLICT DO NOTHING;
+    `);
+
     await client.query("COMMIT");
-    console.log("✅ Database seeded successfully");
+    console.log("✅ Database seeded with users, riders, medicines");
+    console.log("Demo logins (OTP: 123456):");
+    console.log("  Admin:    0000000000");
+    console.log("  Rider 1:  8888888888");
+    console.log("  Rider 2:  7777777777");
+    console.log("  Customer: any other number");
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Seed failed:", err.message);

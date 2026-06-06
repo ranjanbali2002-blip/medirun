@@ -5,7 +5,7 @@
       "name": "medirun",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 5175
+      "port": 5173
     }
   ]
 }
