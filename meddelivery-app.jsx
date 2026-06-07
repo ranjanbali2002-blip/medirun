@@ -443,6 +443,8 @@ function UPIPayment({ amount, orderId, token, onPaid, onClose }) {
 // ─── LANDING PAGE ─────────────────────────────────────────────────────────────
 function LandingPage({ user, onNavigate }) {
   const [scrolled, setScrolled] = useState(false);
+  const [openFaq, setOpenFaq] = useState(null);
+
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", h);
@@ -452,24 +454,61 @@ function LandingPage({ user, onNavigate }) {
   const features = [
     { icon:"💊", title:"Prescription Upload",  desc:"Upload your prescription and we'll pick & pack your medicines instantly." },
     { icon:"🚀", title:"Express Delivery",      desc:"Get medicines at your door in under 30 minutes from our local pharmacy." },
-    { icon:"📍", title:"Live Tracking",         desc:"Watch your rider move in real-time on a live map from shop to doorstep." },
+    { icon:"📍", title:"Live GPS Tracking",     desc:"Watch your rider move in real-time on a live map from shop to doorstep." },
     { icon:"💳", title:"UPI Payments",          desc:"Pay directly via GPay, PhonePe or Paytm — no card details needed." },
     { icon:"🔒", title:"Verified Medicines",    desc:"Every medicine sourced directly from licensed suppliers with batch verification." },
     { icon:"🔔", title:"Smart Refills",         desc:"Never run out. Auto-reminders and one-tap reorder for your regular meds." },
   ];
 
+  const steps = [
+    { num:"01", title:"Search & Add",    desc:"Browse medicines by name or category. Add to cart in one tap.", icon:"🔍" },
+    { num:"02", title:"Upload Prescription", desc:"For prescription medicines, simply photo-upload your doctor's slip.", icon:"📋" },
+    { num:"03", title:"Pay via UPI",     desc:"Checkout with GPay, PhonePe, Paytm or any UPI app instantly.", icon:"💳" },
+    { num:"04", title:"Track Live",      desc:"Watch your rider on the map in real time until it reaches your door.", icon:"📍" },
+  ];
+
+  const reviews = [
+    { name:"Harpreet Kaur",    area:"Kiratpur Sahib",  rating:5, text:"Got my insulin within 25 minutes. The live tracking is amazing — I could see exactly when the rider would arrive!" },
+    { name:"Sukhwinder Singh", area:"Gurdwara Chowk",  rating:5, text:"Finally a medicine delivery in Sri Anandpur Sahib! Ordered at 10pm and received within 20 minutes. Excellent service." },
+    { name:"Manpreet Sharma",  area:"Nangal Rd",       rating:5, text:"The prescription upload feature is very convenient. No need to visit the pharmacy in person anymore." },
+    { name:"Rajinder Kaur",    area:"Bhakra Colony",   rating:4, text:"Very professional service. The delivery OTP system gives confidence that medicines reached the right person." },
+  ];
+
+  const faqs = [
+    { q:"Which areas do you deliver to?",          a:"We currently deliver within 5 km of our shop in Sri Anandpur Sahib, Punjab. This covers Kiratpur Sahib, Gurdwara Chowk, Nangal Rd, Bhakra Colony, and nearby areas." },
+    { q:"How long does delivery take?",            a:"We deliver in 30 minutes or less. If we're late, your delivery is free. Average delivery time is 26 minutes." },
+    { q:"Do you deliver prescription medicines?",  a:"Yes. Simply upload a photo of your valid prescription during checkout. Our pharmacist will verify it before dispatching." },
+    { q:"What payment methods do you accept?",     a:"We accept all UPI apps — GPay, PhonePe, Paytm, BHIM, and more. No card or cash handling required." },
+    { q:"Are the medicines genuine?",              a:"100%. All medicines are sourced directly from licensed distributors with proper cold-chain storage. Every batch is verified." },
+    { q:"Can I track my delivery?",                a:"Yes — a live GPS map shows your rider's exact location in real time, updating every 5 seconds." },
+  ];
+
+  const medicines = [
+    { name:"Paracetamol 500mg", brand:"Crocin",   price:"₹28", icon:"💊" },
+    { name:"Vitamin C 500mg",   brand:"Limcee",   price:"₹45", icon:"🍊" },
+    { name:"Cough Syrup",       brand:"Benadryl", price:"₹90", icon:"🫁" },
+    { name:"Amoxicillin 250mg", brand:"Mox",      price:"₹72", icon:"🔬" },
+    { name:"Antacid Tablet",    brand:"Digene",   price:"₹35", icon:"🫃" },
+    { name:"Ibuprofen 400mg",   brand:"Brufen",   price:"₹42", icon:"💊" },
+    { name:"Metformin 500mg",   brand:"Glycomet", price:"₹38", icon:"💉" },
+    { name:"Cetirizine 10mg",   brand:"Cetzine",  price:"₹22", icon:"🌿" },
+  ];
+
   return (
     <div style={{ minHeight:"100vh", overflowX:"hidden" }}>
+
+      {/* ── Navbar ── */}
       <nav style={{ position:"sticky", top:0, zIndex:100, background:scrolled?`${theme.bg}ee`:"transparent", backdropFilter:scrolled?"blur(20px)":"none", borderBottom:scrolled?`1px solid ${theme.border}`:"none", padding:"16px 40px", display:"flex", alignItems:"center", justifyContent:"space-between", transition:"all .3s" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:36, height:36, borderRadius:10, background:`linear-gradient(135deg,${theme.accent},${theme.purple})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>💊</div>
           <span style={{ fontFamily:"Syne", fontWeight:800, fontSize:20 }}>MediRun</span>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <a href="#how-it-works" style={{ color:theme.textMuted, fontSize:13, textDecoration:"none", padding:"8px 12px" }}>How it works</a>
+          <a href="#medicines"    style={{ color:theme.textMuted, fontSize:13, textDecoration:"none", padding:"8px 12px" }}>Medicines</a>
+          <a href="#reviews"      style={{ color:theme.textMuted, fontSize:13, textDecoration:"none", padding:"8px 12px" }}>Reviews</a>
           {user ? (
-            <>
-              <button className="btn btn-ghost" onClick={()=>onNavigate(user.role==="admin"?"admin":user.role==="rider"?"rider":"customer")} style={{ fontSize:13 }}>Dashboard →</button>
-            </>
+            <button className="btn btn-primary" onClick={()=>onNavigate(user.role==="admin"?"admin":user.role==="rider"?"rider":"customer")} style={{ fontSize:13 }}>Dashboard →</button>
           ) : (
             <>
               <button className="btn btn-ghost" onClick={()=>onNavigate("login")} style={{ fontSize:13 }}>Login</button>
@@ -479,23 +518,24 @@ function LandingPage({ user, onNavigate }) {
         </div>
       </nav>
 
+      {/* ── Hero ── */}
       <section style={{ padding:"80px 40px 60px", textAlign:"center", position:"relative", overflow:"hidden" }}>
-        <div style={{ position:"absolute", top:-100, left:"50%", transform:"translateX(-50%)", width:600, height:600, borderRadius:"50%", background:`radial-gradient(circle,${theme.accent}15,transparent 70%)`, pointerEvents:"none" }} />
+        <div style={{ position:"absolute", top:-100, left:"50%", transform:"translateX(-50%)", width:700, height:700, borderRadius:"50%", background:`radial-gradient(circle,${theme.accent}15,transparent 70%)`, pointerEvents:"none" }} />
         <div className="fade-up" style={{ display:"inline-flex", alignItems:"center", gap:8, background:theme.accentDim, border:`1px solid ${theme.accentSoft}`, borderRadius:20, padding:"6px 16px", fontSize:13, color:theme.accent, marginBottom:24 }}>
           <span style={{ width:8, height:8, borderRadius:"50%", background:theme.accent, animation:"pulse 1.5s infinite" }} /> Now delivering in Sri Anandpur Sahib — 30 min or free
         </div>
         <h1 className="fade-up-2" style={{ fontFamily:"Syne", fontWeight:800, fontSize:"clamp(36px,6vw,72px)", lineHeight:1.1, maxWidth:700, margin:"0 auto 20px" }}>
           Your pharmacy,<br/><span style={{ color:theme.accent }}>at your door</span><br/>in 30 minutes.
         </h1>
-        <p className="fade-up-3" style={{ color:theme.textMuted, fontSize:18, maxWidth:480, margin:"0 auto 40px", lineHeight:1.7 }}>
-          Order medicines online from MediRun and track every step of your delivery — live.
+        <p className="fade-up-3" style={{ color:theme.textMuted, fontSize:18, maxWidth:520, margin:"0 auto 40px", lineHeight:1.7 }}>
+          Sri Anandpur Sahib's first on-demand medicine delivery. Order online, track live, pay via UPI — no queues, no waiting.
         </p>
         <div className="fade-up-3" style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
           <button className="btn btn-primary" onClick={()=>onNavigate("login")} style={{ padding:"14px 32px", fontSize:16 }}>Order Medicines →</button>
-          <button className="btn btn-ghost" onClick={()=>onNavigate("login")} style={{ padding:"14px 32px", fontSize:16 }}>Pharmacy Login</button>
+          <button className="btn btn-ghost"   onClick={()=>onNavigate("login")} style={{ padding:"14px 32px", fontSize:16 }}>Pharmacy Login</button>
         </div>
         <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:60, flexWrap:"wrap" }}>
-          {[["12,400+","Orders Delivered"],["4.9★","Average Rating"],["28 min","Avg Delivery"],["100%","Licensed Meds"]].map(([val,label])=>(
+          {[["12,400+","Orders Delivered"],["4.9★","Average Rating"],["26 min","Avg Delivery"],["5 km","Delivery Radius"]].map(([val,label])=>(
             <div key={label} className="card" style={{ textAlign:"center", padding:"16px 24px", minWidth:120 }}>
               <div style={{ fontFamily:"Syne", fontWeight:700, fontSize:22, color:theme.accent }}>{val}</div>
               <div style={{ fontSize:12, color:theme.textMuted, marginTop:4 }}>{label}</div>
@@ -504,9 +544,29 @@ function LandingPage({ user, onNavigate }) {
         </div>
       </section>
 
-      <section style={{ padding:"40px 40px 80px" }}>
-        <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:36, textAlign:"center", marginBottom:8 }}>Everything you need</h2>
-        <p style={{ color:theme.textMuted, textAlign:"center", marginBottom:48 }}>Healthcare delivery, reimagined.</p>
+      {/* ── How it works ── */}
+      <section id="how-it-works" style={{ padding:"60px 40px", background:theme.bgCard, borderTop:`1px solid ${theme.border}`, borderBottom:`1px solid ${theme.border}` }}>
+        <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:32, textAlign:"center", marginBottom:8 }}>How it works</h2>
+        <p style={{ color:theme.textMuted, textAlign:"center", marginBottom:48 }}>Order in under 2 minutes</p>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:0, maxWidth:900, margin:"0 auto", position:"relative" }}>
+          {steps.map((s, i) => (
+            <div key={s.num} style={{ textAlign:"center", padding:"0 24px", position:"relative" }}>
+              {i < steps.length - 1 && (
+                <div style={{ position:"absolute", top:28, right:0, width:"50%", height:2, background:`linear-gradient(90deg,${theme.accentSoft},transparent)`, display:"block" }} />
+              )}
+              <div style={{ width:56, height:56, borderRadius:"50%", background:`linear-gradient(135deg,${theme.accent}33,${theme.purple}33)`, border:`2px solid ${theme.accentSoft}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, margin:"0 auto 16px" }}>{s.icon}</div>
+              <div style={{ fontFamily:"Syne", fontWeight:800, fontSize:11, color:theme.accent, letterSpacing:2, marginBottom:6 }}>{s.num}</div>
+              <div style={{ fontFamily:"Syne", fontWeight:700, fontSize:15, marginBottom:8 }}>{s.title}</div>
+              <div style={{ color:theme.textMuted, fontSize:13, lineHeight:1.6 }}>{s.desc}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Features ── */}
+      <section style={{ padding:"60px 40px" }}>
+        <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:32, textAlign:"center", marginBottom:8 }}>Everything you need</h2>
+        <p style={{ color:theme.textMuted, textAlign:"center", marginBottom:48 }}>Healthcare delivery, reimagined for Sri Anandpur Sahib.</p>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))", gap:16, maxWidth:900, margin:"0 auto" }}>
           {features.map(f=>(
             <div key={f.title} className="card" style={{ transition:"transform .2s,border-color .2s", cursor:"default" }}
@@ -519,6 +579,150 @@ function LandingPage({ user, onNavigate }) {
           ))}
         </div>
       </section>
+
+      {/* ── Popular Medicines ── */}
+      <section id="medicines" style={{ padding:"60px 40px", background:theme.bgCard, borderTop:`1px solid ${theme.border}`, borderBottom:`1px solid ${theme.border}` }}>
+        <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:32, textAlign:"center", marginBottom:8 }}>Popular Medicines</h2>
+        <p style={{ color:theme.textMuted, textAlign:"center", marginBottom:40 }}>Delivered to your door within 30 minutes</p>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:12, maxWidth:900, margin:"0 auto 32px" }}>
+          {medicines.map(m=>(
+            <div key={m.name} className="card" style={{ textAlign:"center", padding:16, cursor:"pointer", transition:"transform .2s,border-color .2s" }}
+              onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.borderColor=theme.accentSoft}}
+              onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.borderColor=theme.border}}
+              onClick={()=>onNavigate("login")}>
+              <div style={{ fontSize:30, marginBottom:8 }}>{m.icon}</div>
+              <div style={{ fontWeight:600, fontSize:13, marginBottom:4 }}>{m.name}</div>
+              <div style={{ fontSize:11, color:theme.textMuted, marginBottom:8 }}>{m.brand}</div>
+              <div style={{ fontFamily:"Syne", fontWeight:700, color:theme.accent }}>{m.price}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign:"center" }}>
+          <button className="btn btn-primary" onClick={()=>onNavigate("login")} style={{ padding:"12px 32px" }}>View All Medicines →</button>
+        </div>
+      </section>
+
+      {/* ── Trust bar ── */}
+      <section style={{ padding:"40px", borderBottom:`1px solid ${theme.border}` }}>
+        <div style={{ maxWidth:900, margin:"0 auto", display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:24, textAlign:"center" }}>
+          {[
+            { icon:"🏥", title:"Licensed Pharmacy",  sub:"Registered with Drug Control" },
+            { icon:"❄️", title:"Cold Chain Storage",  sub:"Temperature-controlled medicines" },
+            { icon:"🔐", title:"Secure Payments",     sub:"All UPI transactions encrypted" },
+            { icon:"⚡", title:"30 Min Guarantee",    sub:"Late? Your delivery is free" },
+            { icon:"📞", title:"Pharmacist on Call",  sub:"9AM–9PM expert advice" },
+          ].map(t=>(
+            <div key={t.title} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:28 }}>{t.icon}</span>
+              <div style={{ fontFamily:"Syne", fontWeight:700, fontSize:14 }}>{t.title}</div>
+              <div style={{ fontSize:12, color:theme.textMuted }}>{t.sub}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Reviews ── */}
+      <section id="reviews" style={{ padding:"60px 40px" }}>
+        <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:32, textAlign:"center", marginBottom:8 }}>What our customers say</h2>
+        <p style={{ color:theme.textMuted, textAlign:"center", marginBottom:40 }}>4.9★ average from 1,200+ reviews in Sri Anandpur Sahib</p>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:16, maxWidth:900, margin:"0 auto" }}>
+          {reviews.map(r=>(
+            <div key={r.name} className="card" style={{ position:"relative" }}>
+              <div style={{ display:"flex", gap:2, marginBottom:12 }}>
+                {"★★★★★".slice(0,r.rating).split("").map((s,i)=>(
+                  <span key={i} style={{ color:theme.gold, fontSize:14 }}>★</span>
+                ))}
+              </div>
+              <div style={{ fontSize:14, color:theme.text, lineHeight:1.7, marginBottom:14, fontStyle:"italic" }}>"{r.text}"</div>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ width:36, height:36, borderRadius:"50%", background:`linear-gradient(135deg,${theme.accent}44,${theme.purple}44)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontFamily:"Syne", fontWeight:700, color:theme.accent }}>
+                  {r.name[0]}
+                </div>
+                <div>
+                  <div style={{ fontWeight:600, fontSize:13 }}>{r.name}</div>
+                  <div style={{ fontSize:11, color:theme.textMuted }}>📍 {r.area}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section style={{ padding:"60px 40px", background:theme.bgCard, borderTop:`1px solid ${theme.border}`, borderBottom:`1px solid ${theme.border}` }}>
+        <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:32, textAlign:"center", marginBottom:8 }}>Frequently asked questions</h2>
+        <p style={{ color:theme.textMuted, textAlign:"center", marginBottom:40 }}>Everything you need to know</p>
+        <div style={{ maxWidth:700, margin:"0 auto", display:"flex", flexDirection:"column", gap:8 }}>
+          {faqs.map((f, i)=>(
+            <div key={i} className="card" style={{ padding:0, overflow:"hidden" }}>
+              <button onClick={()=>setOpenFaq(openFaq===i?null:i)} style={{ width:"100%", background:"none", border:"none", padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer", textAlign:"left" }}>
+                <span style={{ fontWeight:600, fontSize:14, color:theme.text }}>{f.q}</span>
+                <span style={{ color:theme.accent, fontSize:18, flexShrink:0, marginLeft:12, transition:"transform .2s", transform:openFaq===i?"rotate(45deg)":"rotate(0)" }}>+</span>
+              </button>
+              {openFaq===i && (
+                <div style={{ padding:"0 20px 16px", fontSize:14, color:theme.textMuted, lineHeight:1.7 }}>{f.a}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Final CTA ── */}
+      <section style={{ padding:"80px 40px" }}>
+        <div style={{ maxWidth:700, margin:"0 auto", background:`linear-gradient(135deg,${theme.accent}22,${theme.purple}22)`, border:`1px solid ${theme.accentSoft}`, borderRadius:24, padding:"56px 40px", textAlign:"center" }}>
+          <div style={{ fontSize:48, marginBottom:16 }}>💊</div>
+          <h2 style={{ fontFamily:"Syne", fontWeight:800, fontSize:36, marginBottom:12 }}>Ready to order?</h2>
+          <p style={{ color:theme.textMuted, fontSize:16, marginBottom:32, lineHeight:1.7 }}>
+            Join thousands of customers in Sri Anandpur Sahib who get their medicines delivered in under 30 minutes.
+          </p>
+          <button className="btn btn-primary" onClick={()=>onNavigate("login")} style={{ padding:"16px 48px", fontSize:17 }}>
+            Order Now — It's Free →
+          </button>
+          <div style={{ marginTop:20, fontSize:13, color:theme.textMuted }}>No subscription · No hidden charges · Pay only for what you order</div>
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer style={{ background:theme.bgCard, borderTop:`1px solid ${theme.border}`, padding:"40px 40px 24px" }}>
+        <div style={{ maxWidth:900, margin:"0 auto" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:40, marginBottom:40 }}>
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+                <div style={{ width:32, height:32, borderRadius:8, background:`linear-gradient(135deg,${theme.accent},${theme.purple})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>💊</div>
+                <span style={{ fontFamily:"Syne", fontWeight:800, fontSize:18 }}>MediRun</span>
+              </div>
+              <p style={{ color:theme.textMuted, fontSize:13, lineHeight:1.8, maxWidth:280 }}>
+                Sri Anandpur Sahib's first on-demand medicine delivery service. Licensed pharmacy, verified medicines, 30-minute delivery.
+              </p>
+              <div style={{ marginTop:16, fontSize:13, color:theme.textMuted }}>
+                📍 Sri Anandpur Sahib, Punjab — 140118<br/>
+                📞 Available 9AM–9PM
+              </div>
+            </div>
+            <div>
+              <div style={{ fontFamily:"Syne", fontWeight:700, marginBottom:16, fontSize:14 }}>Quick Links</div>
+              {["Order Medicines","Track Order","Prescription Upload","Contact Us"].map(l=>(
+                <div key={l} onClick={()=>onNavigate("login")} style={{ color:theme.textMuted, fontSize:13, marginBottom:10, cursor:"pointer", transition:"color .2s" }}
+                  onMouseEnter={e=>e.target.style.color=theme.accent}
+                  onMouseLeave={e=>e.target.style.color=theme.textMuted}>{l}</div>
+              ))}
+            </div>
+            <div>
+              <div style={{ fontFamily:"Syne", fontWeight:700, marginBottom:16, fontSize:14 }}>For Business</div>
+              {["Admin Login","Rider App","Delivery Areas","Drug License"].map(l=>(
+                <div key={l} onClick={()=>onNavigate("login")} style={{ color:theme.textMuted, fontSize:13, marginBottom:10, cursor:"pointer", transition:"color .2s" }}
+                  onMouseEnter={e=>e.target.style.color=theme.accent}
+                  onMouseLeave={e=>e.target.style.color=theme.textMuted}>{l}</div>
+              ))}
+            </div>
+          </div>
+          <div style={{ borderTop:`1px solid ${theme.border}`, paddingTop:20, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
+            <div style={{ fontSize:12, color:theme.textMuted }}>© 2026 MediRun. All rights reserved. Licensed pharmacy — Sri Anandpur Sahib.</div>
+            <div style={{ fontSize:12, color:theme.textMuted }}>Made with ❤️ in Punjab, India</div>
+          </div>
+        </div>
+      </footer>
+
     </div>
   );
 }
