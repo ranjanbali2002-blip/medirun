@@ -1,6 +1,7 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import pool from "../db.js";
+import https from "https";
 
 const router = Router();
 const SECRET = process.env.JWT_SECRET || "medirun-dev-secret";
@@ -67,6 +68,41 @@ router.patch("/profile", async (req, res) => {
     );
     res.json(rows[0]);
   } catch { res.status(401).json({ error: "Unauthorized" }); }
+});
+
+// Called after Firebase verifies the phone OTP on the frontend
+router.post("/firebase-login", async (req, res) => {
+  try {
+    const { firebaseToken, phone } = req.body;
+
+    // Verify the Firebase ID token with Google's public API
+    const FIREBASE_PROJECT = "medirun-e8ecc";
+    const verifyUrl = `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=AIzaSyDlkpxfmUMA36TIiHPqEyAje-Vbazz22EI`;
+    const verifyRes = await fetch(verifyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: firebaseToken })
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyData.users?.[0]) return res.status(401).json({ error: "Invalid Firebase token" });
+
+    const firebasePhone = verifyData.users[0].phoneNumber?.replace("+91","") || phone;
+
+    // Find or create user
+    let { rows } = await pool.query("SELECT * FROM users WHERE phone=$1", [firebasePhone]);
+    if (!rows[0]) {
+      const r = await pool.query(
+        "INSERT INTO users (phone, name, role) VALUES ($1,'Customer','customer') RETURNING *",
+        [firebasePhone]
+      );
+      rows = r.rows;
+    }
+    const user = rows[0];
+    const token = jwt.sign({ userId: user.id, role: user.role }, SECRET, { expiresIn: "30d" });
+    res.json({ token, user: { id:user.id, name:user.name, phone:user.phone, role:user.role } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

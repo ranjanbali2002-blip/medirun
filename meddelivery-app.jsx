@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { sendOTP } from "./src/firebase.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const UPI_ID        = "ranjanbali2002-1@okhdfcbank"; // ← change to your UPI ID
@@ -252,40 +253,70 @@ function BackBtn({ onClick }) {
   );
 }
 
-// ─── AUTH ─────────────────────────────────────────────────────────────────────
+// ─── AUTH (Firebase Phone OTP) ───────────────────────────────────────────────
 function AuthScreen({ onLogin, onBack }) {
-  const [step, setStep] = useState("phone");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [hint, setHint] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [step, setStep]         = useState("phone");
+  const [phone, setPhone]       = useState("");
+  const [otp, setOtp]           = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const confirmationRef         = useRef(null);
 
-  const sendOTP = async () => {
+  const handleSendOTP = async () => {
     if (phone.length < 10) return setError("Enter a valid 10-digit phone number");
     setLoading(true); setError("");
-    const data = await apiCall("/api/auth/send-otp", { method:"POST", body:JSON.stringify({ phone }) });
-    if (data?.otp) setHint("Demo OTP: " + data.otp);
-    else setHint("OTP: 123456 (demo)");
-    setStep("otp");
+    try {
+      // Special numbers bypass Firebase and go through our backend (admin/rider)
+      const isSpecial = ["0000000000","8888888888","7777777777","6666666666"].includes(phone);
+      if (isSpecial) {
+        await apiCall("/api/auth/send-otp", { method:"POST", body:JSON.stringify({ phone }) });
+        confirmationRef.current = null; // use backend verify
+      } else {
+        // Real Firebase SMS
+        const confirmation = await sendOTP("+91" + phone, "send-otp-btn");
+        confirmationRef.current = confirmation;
+      }
+      setStep("otp");
+    } catch (e) {
+      setError(e.message || "Failed to send OTP. Try again.");
+      // Reset reCAPTCHA on error
+      if (window._recaptchaVerifier) {
+        window._recaptchaVerifier.clear();
+        window._recaptchaVerifier = null;
+      }
+    }
     setLoading(false);
   };
 
-  const verifyOTP = async () => {
+  const handleVerifyOTP = async () => {
     if (otp.length !== 6) return setError("Enter 6-digit OTP");
     setLoading(true); setError("");
-    const data = await apiCall("/api/auth/verify-otp", { method:"POST", body:JSON.stringify({ phone, code:otp }) });
-    if (data?.token) {
-      onLogin(data.user, data.token);
-    } else {
-      // Demo fallback
-      if (otp === "123456") {
-        const role = phone === "0000000000" ? "admin" : (phone === "8888888888" || phone === "7777777777") ? "rider" : "customer";
-        const names = { "0000000000":"Admin", "8888888888":"Arjun Singh", "7777777777":"Vikram Rao" };
-        onLogin({ id:1, name:names[phone]||"Customer", phone, role }, "demo-token");
+    try {
+      if (confirmationRef.current) {
+        // Firebase verification for real customers
+        const result = await confirmationRef.current.confirm(otp);
+        const firebaseToken = await result.user.getIdToken();
+        // Exchange Firebase token for our app JWT
+        const data = await apiCall("/api/auth/firebase-login", {
+          method: "POST",
+          body: JSON.stringify({ firebaseToken, phone })
+        });
+        if (data?.token) { onLogin(data.user, data.token); return; }
+        // Fallback: create customer session with Firebase data
+        onLogin({ id: result.user.uid, name: "Customer", phone, role: "customer" }, firebaseToken);
       } else {
-        setError("Invalid OTP. Use 123456");
+        // Backend OTP for special accounts (admin/rider)
+        const data = await apiCall("/api/auth/verify-otp", { method:"POST", body:JSON.stringify({ phone, code:otp }) });
+        if (data?.token) { onLogin(data.user, data.token); return; }
+        // Demo fallback
+        if (otp === "123456") {
+          const role  = phone === "0000000000" ? "admin" : "rider";
+          const names = { "0000000000":"Admin","8888888888":"Arjun Singh","7777777777":"Vikram Rao","6666666666":"Mohit Dev" };
+          onLogin({ id:1, name:names[phone]||"Rider", phone, role }, "demo-token");
+        } else { setError("Invalid OTP"); }
       }
+    } catch (e) {
+      setError(e.code === "auth/invalid-verification-code" ? "Wrong OTP — check your SMS" : e.message || "Verification failed");
     }
     setLoading(false);
   };
@@ -307,27 +338,35 @@ function AuthScreen({ onLogin, onBack }) {
               <div style={{ fontSize:11, color:theme.textMuted, marginBottom:8, letterSpacing:1 }}>MOBILE NUMBER</div>
               <div style={{ display:"flex", gap:8, marginBottom:16 }}>
                 <div style={{ background:theme.bgCardAlt, border:`1px solid ${theme.border}`, borderRadius:10, padding:"10px 14px", color:theme.textMuted, fontSize:14, whiteSpace:"nowrap" }}>🇮🇳 +91</div>
-                <input className="input" placeholder="10-digit number" value={phone} onChange={e=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))} onKeyDown={e=>e.key==="Enter"&&sendOTP()} style={{ flex:1 }} />
+                <input className="input" placeholder="10-digit number" value={phone}
+                  onChange={e=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))}
+                  onKeyDown={e=>e.key==="Enter"&&handleSendOTP()} style={{ flex:1 }} />
               </div>
               {error && <div style={{ color:theme.danger, fontSize:12, marginBottom:12 }}>{error}</div>}
-              <button className="btn btn-primary" style={{ width:"100%", padding:14 }} onClick={sendOTP} disabled={loading}>
+              {/* reCAPTCHA attaches to this button invisibly */}
+              <button id="send-otp-btn" className="btn btn-primary" style={{ width:"100%", padding:14 }} onClick={handleSendOTP} disabled={loading}>
                 {loading ? <Spinner/> : "Send OTP →"}
               </button>
               <div style={{ marginTop:16, padding:12, background:theme.bgCardAlt, borderRadius:10, fontSize:12, color:theme.textMuted }}>
-                <div style={{ fontWeight:600, color:theme.text, marginBottom:4 }}>Demo accounts (OTP: 123456)</div>
-                <div>Admin: <span style={{ color:theme.accent }}>0000000000</span> · Rider: <span style={{ color:theme.gold }}>8888888888</span> · Customer: any number</div>
+                <div style={{ fontWeight:600, color:theme.text, marginBottom:4 }}>Special accounts (OTP: 123456)</div>
+                <div>Admin: <span style={{ color:theme.accent }}>0000000000</span> · Rider: <span style={{ color:theme.gold }}>8888888888</span></div>
+                <div style={{ marginTop:4, color:theme.textDim }}>All other numbers receive a real SMS</div>
               </div>
             </>
           ) : (
             <>
               <div style={{ fontSize:11, color:theme.textMuted, marginBottom:8, letterSpacing:1 }}>ENTER OTP</div>
-              <input className="otp-input" placeholder="——————" maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))} onKeyDown={e=>e.key==="Enter"&&verifyOTP()} style={{ marginBottom:8 }} />
-              {hint && <div style={{ fontSize:12, color:theme.accent, textAlign:"center", marginBottom:8 }}>💡 {hint}</div>}
+              <div style={{ fontSize:13, color:theme.accent, textAlign:"center", marginBottom:12 }}>
+                📱 Real SMS sent to +91 {phone}
+              </div>
+              <input className="otp-input" placeholder="——————" maxLength={6} value={otp}
+                onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))}
+                onKeyDown={e=>e.key==="Enter"&&handleVerifyOTP()} style={{ marginBottom:8 }} />
               {error && <div style={{ color:theme.danger, fontSize:12, marginBottom:8 }}>{error}</div>}
-              <button className="btn btn-primary" style={{ width:"100%", padding:14, marginBottom:10 }} onClick={verifyOTP} disabled={loading}>
+              <button className="btn btn-primary" style={{ width:"100%", padding:14, marginBottom:10 }} onClick={handleVerifyOTP} disabled={loading}>
                 {loading ? <Spinner/> : "Verify & Login →"}
               </button>
-              <button className="btn btn-ghost" style={{ width:"100%", padding:10 }} onClick={()=>{setStep("phone");setOtp("");setError("");}}>
+              <button className="btn btn-ghost" style={{ width:"100%", padding:10 }} onClick={()=>{setStep("phone");setOtp("");setError("");confirmationRef.current=null;}}>
                 ← Change Number
               </button>
             </>
