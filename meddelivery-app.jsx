@@ -1383,7 +1383,7 @@ function RiderApp({ user, token, onNavigate, onLogout }) {
 // ─── ADMIN APP ────────────────────────────────────────────────────────────────
 function AdminDashboard({ user, token, onNavigate, onLogout }) {
   const [tab, setTab] = useState("overview");
-  const tabs = ["overview","orders","inventory","riders","delivery","analytics"];
+  const tabs = ["overview","orders","inventory","riders","delivery","analytics","settings"];
   const [pendingCount, setPendingCount] = useState(0);
   const prevPending = useRef(0);
 
@@ -1443,6 +1443,7 @@ function AdminDashboard({ user, token, onNavigate, onLogout }) {
         {tab==="riders"    && <AdminRiders token={token} />}
         {tab==="delivery"  && <AdminDelivery />}
         {tab==="analytics" && <AdminAnalytics />}
+        {tab==="settings"  && <AdminSettings token={token} />}
       </div>
     </div>
   );
@@ -1853,6 +1854,132 @@ function AdminAnalytics() {
             <div style={{ fontSize:12, color:theme.textMuted, marginTop:4 }}>{s.label}</div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── ADMIN SETTINGS ──────────────────────────────────────────────────────────
+function AdminSettings({ token }) {
+  const [settings, setSettings] = useState({});
+  const [form, setForm]         = useState({});
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [riders, setRiders]     = useState([]);
+  const [newRider, setNewRider] = useState({ phone:"", name:"", vehicle:"" });
+  const [addingRider, setAddingRider] = useState(false);
+
+  useEffect(() => {
+    apiCall("/api/settings").then(d => { if(d){ setSettings(d); setForm(d); } });
+    apiCall("/api/riders",{},token).then(d => d && setRiders(d));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    const updated = await apiCall("/api/settings", { method:"PATCH", body:JSON.stringify(form) }, token);
+    if (updated) { setSettings(updated); setSaved(true); setTimeout(()=>setSaved(false),2000); }
+    setSaving(false);
+  };
+
+  const addRider = async () => {
+    if (!newRider.phone || newRider.phone.length < 10) return alert("Enter valid phone");
+    setAddingRider(true);
+    // Create user + rider via auth seed endpoint
+    await apiCall("/api/auth/add-rider", { method:"POST", body:JSON.stringify(newRider) }, token);
+    const updated = await apiCall("/api/riders",{},token);
+    if (updated) setRiders(updated);
+    setNewRider({ phone:"", name:"", vehicle:"" });
+    setAddingRider(false);
+  };
+
+  const Field = ({ label, k, placeholder, type="text" }) => (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ fontSize:11, color:theme.textMuted, marginBottom:6, letterSpacing:1 }}>{label}</div>
+      <input className="input" type={type} placeholder={placeholder} value={form[k]||""}
+        onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} />
+    </div>
+  );
+
+  return (
+    <div className="fade-up">
+      <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:22, marginBottom:4 }}>Settings</h2>
+      <p style={{ color:theme.textMuted, fontSize:13, marginBottom:24 }}>Configure your shop details, UPI and delivery zone</p>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
+
+        {/* Shop Info */}
+        <div className="card">
+          <div style={{ fontFamily:"Syne", fontWeight:700, marginBottom:16 }}>🏥 Shop Info</div>
+          <Field label="SHOP NAME"    k="shop_name"    placeholder="MediRun Pharmacy" />
+          <Field label="ADDRESS"      k="shop_address" placeholder="Sri Anandpur Sahib, Punjab" />
+          <Field label="PHONE"        k="shop_phone"   placeholder="+91 XXXXXXXXXX" />
+          <Field label="OPEN HOURS"   k="delivery_hours" placeholder="9:00 AM - 9:00 PM" />
+        </div>
+
+        {/* Payments & Delivery */}
+        <div className="card">
+          <div style={{ fontFamily:"Syne", fontWeight:700, marginBottom:16 }}>💳 Payments & Delivery</div>
+          <Field label="YOUR UPI ID"         k="upi_id"           placeholder="yourname@bank" />
+          <Field label="MAX DELIVERY (KM)"   k="max_delivery_km"  placeholder="5" type="number" />
+          <div style={{ padding:12, background:theme.bgCardAlt, borderRadius:10, fontSize:12, color:theme.textMuted, marginTop:8 }}>
+            <div style={{ fontWeight:600, color:theme.text, marginBottom:4 }}>Delivery fee tiers</div>
+            <div>0–2km: ₹20 · 2–4km: ₹30 · 4–5km: ₹45</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop:16, display:"flex", gap:12 }}>
+        <button className="btn btn-primary" style={{ padding:"12px 32px" }} onClick={save} disabled={saving}>
+          {saving ? <Spinner/> : saved ? "✓ Saved!" : "Save Changes"}
+        </button>
+      </div>
+
+      {/* Rider Management */}
+      <div className="card" style={{ marginTop:24 }}>
+        <div style={{ fontFamily:"Syne", fontWeight:700, marginBottom:16 }}>🛵 Manage Riders</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
+          {riders.map(r=>(
+            <div key={r.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 14px", background:theme.bgCardAlt, borderRadius:10 }}>
+              <div style={{ display:"flex", gap:12, alignItems:"center" }}>
+                <span style={{ fontSize:24 }}>🛵</span>
+                <div>
+                  <div style={{ fontWeight:600 }}>{r.name||r.user_name}</div>
+                  <div style={{ fontSize:12, color:theme.textMuted }}>{r.vehicle} · {r.phone}</div>
+                </div>
+              </div>
+              <span style={{ fontSize:11, padding:"3px 8px", borderRadius:20, background:r.available?`${theme.accent}22`:`${theme.danger}22`, color:r.available?theme.accent:theme.danger }}>
+                {r.available?"Online":"Offline"}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop:`1px solid ${theme.border}`, paddingTop:16 }}>
+          <div style={{ fontFamily:"Syne", fontWeight:600, marginBottom:12, fontSize:14 }}>Add New Rider</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:10, alignItems:"end" }}>
+            <div>
+              <div style={{ fontSize:11, color:theme.textMuted, marginBottom:6 }}>PHONE</div>
+              <input className="input" placeholder="10-digit number" value={newRider.phone}
+                onChange={e=>setNewRider(r=>({...r,phone:e.target.value.replace(/\D/g,"").slice(0,10)}))} />
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:theme.textMuted, marginBottom:6 }}>NAME</div>
+              <input className="input" placeholder="Rider name" value={newRider.name}
+                onChange={e=>setNewRider(r=>({...r,name:e.target.value}))} />
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:theme.textMuted, marginBottom:6 }}>VEHICLE</div>
+              <input className="input" placeholder="e.g. Hero Splendor" value={newRider.vehicle}
+                onChange={e=>setNewRider(r=>({...r,vehicle:e.target.value}))} />
+            </div>
+            <button className="btn btn-primary" style={{ padding:"10px 16px" }} onClick={addRider} disabled={addingRider}>
+              {addingRider?<Spinner/>:"+ Add"}
+            </button>
+          </div>
+          <div style={{ marginTop:8, fontSize:12, color:theme.textMuted }}>
+            Rider logs in with their phone number + OTP (via Firebase SMS)
+          </div>
+        </div>
       </div>
     </div>
   );

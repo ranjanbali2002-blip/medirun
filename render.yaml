@@ -23,3 +23,16 @@ services:
         value: https://medirun-mauve.vercel.app
       - key: PORT
         value: 4000
+      - key: JWT_SECRET
+        generateValue: true
+      # ── Set these to YOUR real details before deploying ──
+      - key: ADMIN_PHONE
+        value: "0000000000"        # ← your phone number
+      - key: ADMIN_NAME
+        value: "Admin"             # ← your name
+      - key: RIDER_PHONES
+        value: "8888888888:Rider 1:Bike,7777777777:Rider 2:Bike"  # ← phone:name:vehicle
+      - key: UPI_ID
+        value: "medirun@ybl"       # ← your real UPI ID
+      - key: RENDER_EXTERNAL_URL
+        value: "https://medirun-api.onrender.com"  # ← your Render URL

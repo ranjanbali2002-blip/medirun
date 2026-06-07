@@ -70,6 +70,26 @@ router.patch("/profile", async (req, res) => {
   } catch { res.status(401).json({ error: "Unauthorized" }); }
 });
 
+// Admin adds a new rider
+router.post("/add-rider", async (req, res) => {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  try {
+    jwt.verify(token, SECRET); // must be logged in
+    const { phone, name, vehicle } = req.body;
+    if (!phone || phone.length < 10) return res.status(400).json({ error: "Invalid phone" });
+    const { rows } = await pool.query(`
+      INSERT INTO users (phone, name, role) VALUES ($1,$2,'rider')
+      ON CONFLICT (phone) DO UPDATE SET name=$2, role='rider'
+      RETURNING id
+    `, [phone, name || "Rider"]);
+    await pool.query(
+      "INSERT INTO riders (user_id, vehicle) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+      [rows[0].id, vehicle || "Bike"]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Called after Firebase verifies the phone OTP on the frontend
 router.post("/firebase-login", async (req, res) => {
   try {

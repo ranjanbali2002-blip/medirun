@@ -1,11 +1,17 @@
 import pool from "./db.js";
 
+// ── Read real config from env vars ──────────────────────────────────────────
+const ADMIN_PHONE  = process.env.ADMIN_PHONE  || "0000000000";
+const ADMIN_NAME   = process.env.ADMIN_NAME   || "Admin";
+const RIDER_PHONES = (process.env.RIDER_PHONES || "8888888888:Arjun Singh:Hero Splendor,7777777777:Vikram Rao:Honda Activa")
+  .split(",").map(r => { const [phone, name, vehicle] = r.split(":"); return { phone, name, vehicle }; });
+
 async function seed() {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Schema
+    // ── Schema ──────────────────────────────────────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -74,19 +80,6 @@ async function seed() {
         quantity INT DEFAULT 1,
         price DECIMAL(10,2) DEFAULT 0
       );
-      CREATE TABLE IF NOT EXISTS route_groups (
-        id SERIAL PRIMARY KEY,
-        direction VARCHAR(200),
-        distance VARCHAR(20),
-        eta VARCHAR(20),
-        rider_id INT REFERENCES riders(id),
-        created_at TIMESTAMP DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS route_group_orders (
-        route_group_id INT REFERENCES route_groups(id),
-        order_id VARCHAR(20) REFERENCES orders(id),
-        PRIMARY KEY (route_group_id, order_id)
-      );
       CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,
         order_id VARCHAR(20) REFERENCES orders(id),
@@ -96,71 +89,88 @@ async function seed() {
         status VARCHAR(20) DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key VARCHAR(50) PRIMARY KEY,
+        value TEXT,
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
     `);
 
-    // Seed demo users
-    const adminResult = await client.query(`
-      INSERT INTO users (phone, name, role) VALUES
-        ('0000000000','Admin User','admin'),
-        ('8888888888','Arjun Singh','rider'),
-        ('7777777777','Vikram Rao','rider'),
-        ('6666666666','Mohit Dev','rider'),
-        ('9999999999','Priya Sharma','customer')
-      ON CONFLICT (phone) DO NOTHING RETURNING id, phone, role;
-    `);
-
-    const userMap = {};
-    for (const u of adminResult.rows) userMap[u.phone] = u.id;
-
-    // If we need to fetch existing users
-    for (const phone of ['8888888888','7777777777','6666666666']) {
-      if (!userMap[phone]) {
-        const { rows } = await client.query("SELECT id FROM users WHERE phone=$1", [phone]);
-        if (rows[0]) userMap[phone] = rows[0].id;
-      }
-    }
-
-    // Seed riders
-    for (const [phone, vehicle] of [
-      ['8888888888','Hero Splendor'],
-      ['7777777777','Honda Activa'],
-      ['6666666666','TVS Jupiter']
-    ]) {
-      const uid = userMap[phone];
-      if (uid) {
-        await client.query(
-          "INSERT INTO riders (user_id, vehicle) VALUES ($1,$2) ON CONFLICT DO NOTHING",
-          [uid, vehicle]
-        );
-      }
-    }
-
-    // Seed medicines
+    // ── Admin user ───────────────────────────────────────────────────────────
     await client.query(`
-      INSERT INTO medicines (name, brand, price, category, icon, stock, requires_prescription) VALUES
-        ('Paracetamol 500mg','Crocin',28,'Pain Relief','💊',150,false),
-        ('Vitamin C 500mg','Limcee',45,'Vitamins','🍊',200,false),
-        ('Cough Syrup','Benadryl',90,'Cold & Flu','🫁',80,false),
-        ('Amoxicillin 250mg','Mox',72,'Antibiotic','🔬',60,true),
-        ('Antacid Tablet','Digene',35,'Digestion','🫃',120,false),
-        ('Ibuprofen 400mg','Brufen',42,'Pain Relief','💊',100,false),
-        ('Metformin 500mg','Glycomet',38,'Diabetes','💉',90,true),
-        ('Azithromycin 500mg','Azee',95,'Antibiotic','🔬',50,true),
-        ('Cetirizine 10mg','Cetzine',22,'Allergy','🌿',110,false),
-        ('Omeprazole 20mg','Omez',48,'Digestion','🫃',75,true)
-      ON CONFLICT DO NOTHING;
-    `);
+      INSERT INTO users (phone, name, role) VALUES ($1,$2,'admin')
+      ON CONFLICT (phone) DO UPDATE SET name=$2, role='admin'
+    `, [ADMIN_PHONE, ADMIN_NAME]);
+
+    console.log(`✅ Admin: ${ADMIN_PHONE} (${ADMIN_NAME})`);
+
+    // ── Rider users ──────────────────────────────────────────────────────────
+    for (const { phone, name, vehicle } of RIDER_PHONES) {
+      if (!phone) continue;
+      const { rows } = await client.query(`
+        INSERT INTO users (phone, name, role) VALUES ($1,$2,'rider')
+        ON CONFLICT (phone) DO UPDATE SET name=$2, role='rider'
+        RETURNING id
+      `, [phone, name || "Rider"]);
+
+      const uid = rows[0]?.id;
+      if (uid) {
+        await client.query(`
+          INSERT INTO riders (user_id, vehicle) VALUES ($1,$2)
+          ON CONFLICT DO NOTHING
+        `, [uid, vehicle || "Bike"]);
+        console.log(`✅ Rider: ${phone} (${name}) — ${vehicle}`);
+      }
+    }
+
+    // ── Medicines (only if table is empty) ───────────────────────────────────
+    const { rows: existingMeds } = await client.query("SELECT COUNT(*) FROM medicines");
+    if (+existingMeds[0].count === 0) {
+      await client.query(`
+        INSERT INTO medicines (name, brand, price, category, icon, stock, requires_prescription) VALUES
+          ('Paracetamol 500mg','Crocin',28,'Pain Relief','💊',150,false),
+          ('Vitamin C 500mg','Limcee',45,'Vitamins','🍊',200,false),
+          ('Cough Syrup','Benadryl',90,'Cold & Flu','🫁',80,false),
+          ('Amoxicillin 250mg','Mox',72,'Antibiotic','🔬',60,true),
+          ('Antacid Tablet','Digene',35,'Digestion','🫃',120,false),
+          ('Ibuprofen 400mg','Brufen',42,'Pain Relief','💊',100,false),
+          ('Metformin 500mg','Glycomet',38,'Diabetes','💉',90,true),
+          ('Azithromycin 500mg','Azee',95,'Antibiotic','🔬',50,true),
+          ('Cetirizine 10mg','Cetzine',22,'Allergy','🌿',110,false),
+          ('Omeprazole 20mg','Omez',48,'Digestion','🫃',75,true),
+          ('Atorvastatin 10mg','Lipitor',65,'Cardiac','❤️',80,true),
+          ('Amlodipine 5mg','Amlo',55,'Cardiac','❤️',70,true),
+          ('Pantoprazole 40mg','Pan',38,'Digestion','🫃',90,true),
+          ('Losartan 50mg','Losacar',72,'Cardiac','❤️',60,true),
+          ('Glimepiride 1mg','Amaryl',45,'Diabetes','💉',80,true)
+      `);
+      console.log("✅ Medicines seeded (15 items)");
+    } else {
+      console.log(`ℹ️  Medicines already exist (${existingMeds[0].count} items) — skipping`);
+    }
+
+    // ── App settings defaults ────────────────────────────────────────────────
+    const defaults = [
+      ["shop_name",     "MediRun Pharmacy"],
+      ["shop_address",  "Sri Anandpur Sahib, Punjab"],
+      ["shop_phone",    ""],
+      ["upi_id",        process.env.UPI_ID || "medirun@ybl"],
+      ["max_delivery_km", "5"],
+      ["delivery_hours", "9:00 AM - 9:00 PM"],
+    ];
+    for (const [key, value] of defaults) {
+      await client.query(`
+        INSERT INTO app_settings (key, value) VALUES ($1,$2)
+        ON CONFLICT (key) DO NOTHING
+      `, [key, value]);
+    }
 
     await client.query("COMMIT");
-    console.log("✅ Database seeded with users, riders, medicines");
-    console.log("Demo logins (OTP: 123456):");
-    console.log("  Admin:    0000000000");
-    console.log("  Rider 1:  8888888888");
-    console.log("  Rider 2:  7777777777");
-    console.log("  Customer: any other number");
+    console.log("✅ Database ready for production");
+    console.log(`\nAdmin login: +91 ${ADMIN_PHONE}`);
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("Seed failed:", err.message);
+    console.error("❌ Seed failed:", err.message);
     process.exit(1);
   } finally {
     client.release();
