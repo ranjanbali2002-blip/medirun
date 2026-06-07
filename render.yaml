@@ -10,7 +10,7 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm install
+    buildCommand: npm install && node seed.js
     startCommand: npm start
     envVars:
       - key: DATABASE_URL
