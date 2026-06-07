@@ -1383,7 +1383,7 @@ function RiderApp({ user, token, onNavigate, onLogout }) {
 // ─── ADMIN APP ────────────────────────────────────────────────────────────────
 function AdminDashboard({ user, token, onNavigate, onLogout }) {
   const [tab, setTab] = useState("overview");
-  const tabs = ["overview","orders","inventory","riders","delivery","analytics","settings"];
+  const tabs = ["overview","orders","customers","inventory","riders","delivery","analytics","settings"];
   const [pendingCount, setPendingCount] = useState(0);
   const prevPending = useRef(0);
 
@@ -1442,6 +1442,7 @@ function AdminDashboard({ user, token, onNavigate, onLogout }) {
         {tab==="inventory" && <AdminInventory token={token} />}
         {tab==="riders"    && <AdminRiders token={token} />}
         {tab==="delivery"  && <AdminDelivery />}
+        {tab==="customers" && <AdminCustomers token={token} />}
         {tab==="analytics" && <AdminAnalytics />}
         {tab==="settings"  && <AdminSettings token={token} />}
       </div>
@@ -1855,6 +1856,118 @@ function AdminAnalytics() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── ADMIN CUSTOMERS ─────────────────────────────────────────────────────────
+function AdminCustomers({ token }) {
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState("");
+
+  useEffect(() => {
+    apiCall("/api/auth/customers", {}, token).then(d => {
+      if (d) setCustomers(d);
+      setLoading(false);
+    });
+  }, []);
+
+  const filtered = customers.filter(c =>
+    !search ||
+    c.name?.toLowerCase().includes(search.toLowerCase()) ||
+    c.phone?.includes(search)
+  );
+
+  const totalRevenue = customers.reduce((a, c) => a + (+c.total_spent || 0), 0);
+
+  return (
+    <div className="fade-up">
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <div>
+          <h2 style={{ fontFamily:"Syne", fontWeight:700, fontSize:22 }}>Customers</h2>
+          <p style={{ color:theme.textMuted, fontSize:13, marginTop:2 }}>
+            {customers.length} registered · ₹{totalRevenue.toLocaleString("en-IN")} total revenue
+          </p>
+        </div>
+        <input className="input" placeholder="🔍 Search by name or phone" value={search}
+          onChange={e=>setSearch(e.target.value)} style={{ width:240, fontSize:13 }} />
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:24 }}>
+        {[
+          { label:"Total Customers",    value:customers.length,                                                 color:"green",  icon:"👥" },
+          { label:"Total Revenue",      value:`₹${totalRevenue.toLocaleString("en-IN")}`,                      color:"gold",   icon:"💰" },
+          { label:"Repeat Customers",   value:customers.filter(c=>+c.total_orders>1).length,                   color:"purple", icon:"🔄" },
+          { label:"Avg Order Value",    value:`₹${customers.length ? Math.round(totalRevenue / customers.reduce((a,c)=>a+(+c.total_orders||0),0)||0) : 0}`, color:"red", icon:"📊" },
+        ].map(m=>(
+          <div key={m.label} className={`metric-card ${m.color}`}>
+            <div style={{ fontSize:22, marginBottom:8 }}>{m.icon}</div>
+            <div style={{ fontFamily:"Syne", fontWeight:700, fontSize:24, marginBottom:4 }}>{m.value}</div>
+            <div style={{ fontSize:12, color:theme.textMuted }}>{m.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading && <div style={{ textAlign:"center", padding:40 }}><Spinner/></div>}
+
+      {!loading && filtered.length === 0 && (
+        <div style={{ textAlign:"center", padding:60, color:theme.textMuted }}>
+          <div style={{ fontSize:40, marginBottom:12 }}>👥</div>
+          {search ? "No customers match your search" : "No customers yet — share your app link to get started!"}
+        </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <div className="card" style={{ padding:0, overflow:"hidden" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead>
+              <tr style={{ background:theme.bgCardAlt, borderBottom:`1px solid ${theme.border}` }}>
+                {["Customer","Phone","Address","Orders","Total Spent","Joined","Last Order"].map(h=>(
+                  <th key={h} style={{ padding:"12px 14px", textAlign:"left", fontSize:11, color:theme.textMuted, fontWeight:500, textTransform:"uppercase", letterSpacing:"0.5px" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(c=>(
+                <tr key={c.id} className="table-row">
+                  <td style={{ padding:"12px 14px" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                      <div style={{ width:32, height:32, borderRadius:"50%", background:`linear-gradient(135deg,${theme.accent}44,${theme.purple}44)`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Syne", fontWeight:700, fontSize:13, color:theme.accent, flexShrink:0 }}>
+                        {(c.name||"?")[0].toUpperCase()}
+                      </div>
+                      <span style={{ fontWeight:600, fontSize:14 }}>{c.name || "—"}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding:"12px 14px", fontFamily:"monospace", fontSize:13, color:theme.accent }}>
+                    +91 {c.phone}
+                  </td>
+                  <td style={{ padding:"12px 14px", fontSize:12, color:theme.textMuted, maxWidth:160 }}>
+                    {c.address || "—"}
+                  </td>
+                  <td style={{ padding:"12px 14px", textAlign:"center" }}>
+                    <span style={{ fontFamily:"Syne", fontWeight:700, fontSize:15, color:+c.total_orders>0?theme.text:theme.textMuted }}>
+                      {c.total_orders}
+                    </span>
+                  </td>
+                  <td style={{ padding:"12px 14px" }}>
+                    <span style={{ fontFamily:"Syne", fontWeight:700, color:theme.accent }}>
+                      ₹{(+c.total_spent||0).toLocaleString("en-IN")}
+                    </span>
+                  </td>
+                  <td style={{ padding:"12px 14px", fontSize:12, color:theme.textMuted }}>
+                    {new Date(c.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+                  </td>
+                  <td style={{ padding:"12px 14px", fontSize:12, color:theme.textMuted }}>
+                    {c.last_order ? new Date(c.last_order).toLocaleDateString("en-IN",{day:"numeric",month:"short"}) : "No orders"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

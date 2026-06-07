@@ -70,6 +70,26 @@ router.patch("/profile", async (req, res) => {
   } catch { res.status(401).json({ error: "Unauthorized" }); }
 });
 
+// Admin views all customers
+router.get("/customers", async (req, res) => {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  try {
+    jwt.verify(token, SECRET);
+    const { rows } = await pool.query(`
+      SELECT u.id, u.name, u.phone, u.address, u.created_at,
+        COUNT(o.id) as total_orders,
+        COALESCE(SUM(o.total),0) as total_spent,
+        MAX(o.created_at) as last_order
+      FROM users u
+      LEFT JOIN orders o ON o.user_id = u.id
+      WHERE u.role = 'customer'
+      GROUP BY u.id
+      ORDER BY u.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Admin adds a new rider
 router.post("/add-rider", async (req, res) => {
   const token = req.headers.authorization?.replace("Bearer ", "");
